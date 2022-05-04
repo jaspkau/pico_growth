@@ -1,17 +1,30 @@
-setwd("G://My Drive//my_folder/db_pico/pico_growth/pico_growth_stats/")
+#setwd("G://My Drive//my_folder/db_pico/pico_growth/pico_growth_stats/")
 #source("/Users/administrator/Documents/jaspreet/pico/pico_comb_run/packages.r")
-library(dunn.test)
-library(adespatial)
-library(phyloseq)
-library(metagenomeSeq)
-library(mixOmics)
-library(sjPlot)
-library(ggpubr)
-library(gdata)
+
+## DWS: Never set working direcotry in code. This will fail on anyone elses
+## machine and int his case is also a security risk as you just revealed that
+## on the machine you are on you code and work under an administrator account.
+
+## instead, document what you expect the working directory to be and let the
+## user handle that (eg in an rstudio project file ignored by git). 
+
+
+
+#library(dunn.test)
+#library(adespatial)
+#library(phyloseq)
+#library(metagenomeSeq)
+#library(mixOmics)
+#library(sjPlot)
+#library(ggpubr)
+#library(gdata)
+library(ggplot2)
 library(readxl)
 library(dplyr)
-library(statmod)
+#library(statmod)
 library(glmmTMB)
+
+## Don't dump unnneded packages into the global namespace
 
 # Pico growth data --------------------------------------------------------
 
