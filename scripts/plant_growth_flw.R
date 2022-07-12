@@ -92,12 +92,12 @@ growth2$la = ifelse(growth2$la < 0, as.numeric(paste(0)), growth2$la)
 
 ## Load another sheet that provides the data from year0 and year1 side by side
 growth2 = read_excel("data/pico_growth_met.xlsx", sheet = 2, na = "NA")
-
+growth2$year <- as.factor(growth2$year)
 ## Crossed mixed model showing the effect of vegetative fitness on next year's
 ## vegetative fitness
 q2glm1 = glmmTMB(la2 ~ la + (1 | year) + (1 | plant_no),
               family = tweedie(link = "log"),
-              ziformula = ~ la,
+              ziformula = ~ year,
               data = growth2)
 summary(q2glm1)
 
@@ -109,7 +109,7 @@ summary(q2glm1)
 
 q3glm1 <- glmmTMB(la2 ~ infl + (1 | year) + (1 | plant_no),
                   family = tweedie(link = "log"),
-                  ziformula = ~ infl,
+                  ziformula = ~ year,
                   data = growth2)
 summary(q3glm1)
 
@@ -118,6 +118,6 @@ summary(q3glm1)
 
 q4glm1 <- glmmTMB(la2 ~ herb + (1 | year) + (1 | plant_no),
                   family = tweedie(link = "log"),
-                  ziformula = ~ herb,
+                  ziformula = ~ year,
                   data = growth2)
 summary(q4glm1)
