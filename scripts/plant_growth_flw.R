@@ -1,12 +1,13 @@
-#setwd("G://My Drive//my_folder/db_pico/pico_growth/")
-#source("/Users/administrator/Documents/jaspreet/pico/pico_comb_run/packages.r")
+#setwd("C:/Users/Administrator/OneDrive - University of Wisconsin-La Crosse/my_folder/db_pico/pico_growth")
 
 library(readxl)
 library(dplyr)
 library(glmmTMB)
 library(DHARMa)
 library(ggplot2)
-library(mixedup)
+library(tidyr)
+library(ggeffects)
+library(ggpubr)
 
 # Pico growth data --------------------------------------------------------
 
@@ -29,95 +30,266 @@ growth = growth_raw %>%
             herb = sum(herb, na.rm = TRUE))
 growth
 
+growth = growth %>% drop_na()
 growth$year = as.factor(growth$year)
 growth$inf = as.factor(growth$inf)
 
-## plotting data for each plant
 
-p <- ggplot(growth, aes(x=plant_no, y=infl, color=year, shape=inf)) +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-  geom_jitter(width = 0.00) +
-  scale_color_manual(values=c("red", "blue", "green", "black", "brown", "pink", "grey", "yellow", "khaki"))
-p
-
-## Question 1: Is vegetative fitness of a plant in a given year correlated to
-## its reproductive effort in that year?
+## Question 1: Is vegetative fitness of a plant in a given year correlated to-----
+## its reproductive effort in that year?-----------------------------------------
 
 ## crossed mixed model showing the effect of vegetative fitness (leaf area) on
-## reproductive fitness (inflorescence length) in a given year
+## reproductive fitness (inflorescence length) in a given year-
 
 q1glm1 = glmmTMB(infl ~ la + (1 | year) + (1 | plant_no),
               family = tweedie(link = "log"), ##other option is to use ziGamma family here
-              ziformula = ~ la + year,
+              ziformula = ~ la + (1 | year),
               data = growth)
 summary(q1glm1)
 
-## simulationOutput <- simulateResiduals(fittedModel = q1glm1, plot = F)
-## plot(simulationOutput)
+##plot the predicted data for q1glm1 (Fig. 1)-
 
-## For the following questions, adjust the response variable by taking out the
-## random effects. Extract the random effect of year from infl variable by
-## using the q1glm1 model
+###plot predictions for the conditional model
+q1glm1.pre.con = ggpredict(q1glm1, terms = "la", type = "fixed")
 
-## run model on la as a dependent variable to extract the random effects
+q1a = ggplot(q1glm1.pre.con, aes(x=x, y=predicted)) +
+  geom_point(size=2, shape=20, col="black") +
+  labs(y="Inflorescence length (cm)", x = expression(paste("Leaf area (cm"^"2",")"))) +
+  geom_smooth(method=lm, se=FALSE, fullrange=FALSE, level=0.95) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.1) +
+  theme_classic() +
+  geom_point(data=growth, inherit.aes = TRUE, aes(x=la, y=infl), shape=21, col="grey48")
 
-q0glm = glmmTMB(la ~ (1 | year) + (1 | plant_no),
-                family = tweedie(link = "log"),
-                ziformula = ~ year,
-                data = growth)
-summary(q0glm)
+###plot predictions for the zero-inflated model
+q1glm1.pre.zi = ggpredict(q1glm1, terms = "la", type = "zi_prob")
 
-extract_random_effects(q0glm)
+q1b = ggplot(q1glm1.pre.zi, aes(x=x, y=predicted)) +
+  geom_point(size=2, shape=20, col="black") +
+  labs(y="Probability of reproductive dormancy", x = expression(paste("Leaf area (cm"^"2",")"))) +
+  geom_smooth(method=lm, se=FALSE, fullrange=FALSE, level=0.95) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.1) +
+  ylim(-0.1, 1) +
+  theme_classic()
 
-## Make a new growth data frame by adding or subtracting the effect of random
-## variable
-
-growth2 = growth %>% group_by(year) %>% mutate(new = ifelse(year == 2017, la - 0.698, la)) %>%
-  mutate(new = ifelse(year == 2018, la + 1.32, new))%>%
-  mutate(new = ifelse(year == 2019, la - 0.251, new))%>%
-  mutate(new = ifelse(year == 2020, la - 0.667, new))%>%
-  mutate(new = ifelse(year == 2021, la + 0.171, new))%>%
-  mutate(new = ifelse(year == 2022, la + 0.01, new))
-
-## DWS: you could do the above with a merge/join rather than hard code it. That
-## is fragile. It would also probably work to use year as fixed effect to grab
-## coefficients, right? Is result much different?
+pdf(file = "results/q1glm1.pdf", width = 7, height = 3)
+ggarrange(q1a, q1b, ncol = 2, nrow = 1)
+dev.off()
 
 
-growth2$la = growth2$new
-growth2$la = ifelse(growth2$la < 0, as.numeric(paste(0)), growth2$la)
-                                                 
-## Question 2: Does vegetative fitness of an individual in a given year explain
-## its vegetative fitness in the following year?
+
+## Question 2: Does vegetative fitness of an individual in a given year explain-------------------
+## its vegetative or reproductive fitness in the following year?-------------------------
 
 ## Load another sheet that provides the data from year0 and year1 side by side
 growth2 = read_excel("data/pico_growth_met.xlsx", sheet = 2, na = "NA")
-growth2$year <- as.factor(growth2$year)
-## Crossed mixed model showing the effect of vegetative fitness on next year's
+growth2$year.res <- as.factor(growth2$year.res)
+growth2$year.pre <- as.factor(growth2$year.pre)
+
+## Crossed mixed model showing the effect of vegetative fitness on next year's-
 ## vegetative fitness
-q2glm1 = glmmTMB(la2 ~ la + (1 | year) + (1 | plant_no),
+q2glm1 = glmmTMB(la.res ~ la.pre + (1 | year.res) + (1 | plant_no),
               family = tweedie(link = "log"),
-              ziformula = ~ year,
+              ziformula = ~ la.pre + (1 | year.res) + (1 | plant_no),
               data = growth2)
 summary(q2glm1)
 
-## Question3: Does the reproductive effort made by a plant in a given year
-## explain its vegetative fitness in the following year?
+##plot the predicted data for q2glm1
+###plot predictions for the conditional model
+q2glm1.pre.con = ggpredict(q2glm1, terms = "la.pre", type = "fixed")
 
-## mixed model showing the effect of reproductive fitness in y0 on next year's
-## reproductive fitness (inflorescence length)
+q2a = ggplot(q2glm1.pre.con, aes(x=x, y=predicted)) +
+  geom_point(size=2, shape=20, col="black") +
+  labs(x = expression(paste("Leaf area in year y"^"t-1", " (cm"^"2",")")), y=expression(paste("Leaf area in year y"^"t", " (cm"^"2",")"))) +
+  geom_smooth(method=lm, se=FALSE, fullrange=FALSE, level=0.95) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.1) +
+  theme_classic() +
+  geom_point(data=growth2, inherit.aes = TRUE, aes(x=la.pre, y=la.res), shape=21, col="grey48")
 
-q3glm1 <- glmmTMB(la2 ~ infl + (1 | year) + (1 | plant_no),
+###plot predictions for the zero-inflated model
+q2glm1.pre.zi = ggpredict(q2glm1, terms = "la.pre", type = "zi_prob")
+
+q2b = ggplot(q2glm1.pre.zi, aes(x=x, y=predicted)) +
+  geom_point(size=2, shape=20, col="black") +
+  labs(x = expression(paste("Leaf area in year y"^"t-1", " (cm"^"2",")")), y=expression(paste("Probability of vegetative dormancy in y"^"t"))) +
+  geom_smooth(method=lm, se=FALSE, fullrange=FALSE, level=0.95) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.1) +
+  ylim(0, 0.55) +
+  theme_classic()
+
+###export the plot
+pdf(file = "results/q2glm1.pdf", width = 7.5, height = 3.5)
+ggarrange(q2a, q2b, ncol = 2, nrow = 1)
+dev.off()
+
+### Crossed mixed model showing the effect of vegetative fitness on next year's--
+## reproductive fitness
+
+q2glm2 = glmmTMB(infl.res ~ la.pre + (1 | year.res) + (1 | plant_no),
+                 family = tweedie(link = "log"),
+                 ziformula = ~ la.pre + (1 | year.res) + (1 | plant_no),
+                 data = growth2)
+summary(q2glm2)
+
+##plot the predicted data for q2glm2-
+###plot predictions for the conditional model
+q2glm2.pre.con = ggpredict(q2glm2, terms = "la.pre", type = "fixed")
+
+q2.2a = ggplot(q2glm2.pre.con, aes(x=x, y=predicted)) +
+  geom_point(size=2, shape=20, col="black") +
+  labs(x = expression(paste("Leaf area in year y"^"t-1", " (cm"^"2",")")), y=expression(paste("Inflorescence length in y"^"t", "(cm)"))) +
+  geom_smooth(method=lm, se=FALSE, fullrange=FALSE, level=0.95) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.1) +
+  theme_classic() +
+  geom_point(data=growth2, inherit.aes = TRUE, aes(x=la.pre, y=la.res), shape=21, col="grey48")
+
+###plot predictions for the zero-inflated model
+q2glm2.pre.zi = ggpredict(q2glm2, terms = "la.pre", type = "zi_prob")
+
+q2.2b = ggplot(q2glm2.pre.zi, aes(x=x, y=predicted)) +
+  geom_point(size=2, shape=20, col="black") +
+  labs(x = expression(paste("Leaf area in year y"^"t-1", " (cm"^"2",")")), y=expression(paste("Probability of reproductive dormancy in y"^"t"))) +
+  geom_smooth(method=lm, se=FALSE, fullrange=FALSE, level=0.95) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.1) +
+  ylim(0, 1) +
+  theme_classic()
+
+###export the plot
+pdf(file = "results/q2glm2.pdf", width = 7.5, height = 3.5)
+ggarrange(q2.2a, q2.2b, ncol = 2, nrow = 1)
+dev.off()
+
+
+
+## Question3: Does the reproductive effort made by a plant in a given year-------
+## explain its vegetative or reproductive fitness in the following year?--------
+
+## mixed model showing the effect of reproductive fitness in yt-1 on next year's
+## vegetative fitness
+
+q3glm1 <- glmmTMB(la.res ~ infl.pre + (1 | year.res) + (1 | plant_no),
                   family = tweedie(link = "log"),
-                  ziformula = ~ year,
+                  ziformula = ~ infl.pre + (1 | year.res),
                   data = growth2)
 summary(q3glm1)
 
-## Question 4: Does herbivory experienced by an individual plant explain
-## patterns of vegetative fitness in the subsequent year?
+##plot the data for q3glm1-
+###plot predictions for the conditional model
+q3glm1.pre.con = ggpredict(q3glm1, terms = "infl.pre", type = "fixed")
 
-q4glm1 <- glmmTMB(la2 ~ herb + (1 | year) + (1 | plant_no),
+q3a = ggplot(q3glm1.pre.con, aes(x=x, y=predicted)) +
+  geom_point(size=2, shape=20, col="black") +
+  labs(x = expression(paste("Inflorescence length in y"^"t-1", "(cm)")), y=expression(paste("Leaf area in year y"^"t", " (cm"^"2",")"))) +
+  geom_smooth(method=lm, se=FALSE, fullrange=FALSE, level=0.95) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.1) +
+  theme_classic() +
+  geom_point(data=growth2, inherit.aes = TRUE, aes(x=infl.pre, y=la.res), shape=21, col="grey48")
+
+###plot predictions for the zero-inflated model
+q3glm2.pre.zi = ggpredict(q3glm1, terms = "infl.pre", type = "zi_prob")
+
+q3b = ggplot(q3glm2.pre.zi, aes(x=x, y=predicted)) +
+  geom_point(size=2, shape=20, col="black") +
+  labs(x = expression(paste("Inflorescence length in y"^"t-1", "(cm)")), y=expression(paste("Probability of vegetative dormancy in y"^"t"))) +
+  geom_smooth(method=lm, se=FALSE, fullrange=FALSE, level=0.95) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.1) +
+  ylim(0, 0.25) +
+  theme_classic()
+
+###export the plot
+pdf(file = "results/q3glm1.pdf", width = 7.5, height = 3.5)
+ggarrange(q3a, q3b, ncol = 2, nrow = 1)
+dev.off()
+
+## mixed model showing the effect of reproductive fitness in yt-1 on next year's
+## reproductive fitness
+
+q3glm2 <- glmmTMB(infl.res ~ infl.pre + (1 | year.res) + (1 | plant_no),
                   family = tweedie(link = "log"),
-                  ziformula = ~ year,
+                  ziformula = ~ infl.pre + (1 | year.res),
+                  data = growth2)
+summary(q3glm2)
+
+##plot the data for q3glm2-
+###plot predictions for the conditional model
+q3glm2.pre.con = ggpredict(q3glm2, terms = "infl.pre", type = "fixed")
+
+q3.2a = ggplot(q3glm2.pre.con, aes(x=x, y=predicted)) +
+  geom_point(size=2, shape=20, col="black") +
+  labs(x = expression(paste("Inflorescence length in y"^"t-1", "(cm)")), y=expression(paste("Inflorescence length in y"^"t", "(cm)"))) +
+  geom_smooth(method=lm, se=FALSE, fullrange=FALSE, level=0.95) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.1) +
+  theme_classic() +
+  geom_point(data=growth2, inherit.aes = TRUE, aes(x=infl.pre, y=infl.res), shape=21, col="grey48")
+
+###plot predictions for the zero-inflated model
+q3glm2.pre.zi = ggpredict(q3glm2, terms = "infl.pre", type = "zi_prob")
+
+q3.2b = ggplot(q3glm2.pre.zi, aes(x=x, y=predicted)) +
+  geom_point(size=2, shape=20, col="black") +
+  labs(x = expression(paste("Inflorescence length in y"^"t-1", "(cm)")), y=expression(paste("Probability of reproductive dormancy in y"^"t"))) +
+  geom_smooth(method=lm, se=FALSE, fullrange=FALSE, level=0.95) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.1) +
+  ylim(0, 1) +
+  theme_classic()
+
+###export the plot
+pdf(file = "results/q3glm2.pdf", width = 7.5, height = 3.5)
+ggarrange(q3.2a, q3.2b, ncol = 2, nrow = 1)
+dev.off()
+
+
+
+## Question 4: Does herbivory experienced by an individual plant explain-------
+## patterns of vegetative or reproductive fitness in the subsequent year?-------
+
+q4glm1 <- glmmTMB(la.res ~ herb.pre + (1 | year.res) + (1 | plant_no),
+                  family = tweedie(link = "log"),
+                  ziformula = ~ herb.pre + (1 | year.res),
                   data = growth2)
 summary(q4glm1)
+
+##plot the data for q4glm1-
+###plot predictions for the conditional model
+q4glm1.pre.con = ggpredict(q4glm1, terms = "herb.pre", type = "fixed")
+
+q4a = ggplot(q4glm1.pre.con, aes(x=as.character(x), y=predicted)) +
+  geom_point(size=2, shape=20, col="black") +
+  labs(x = expression(paste("Herbivory in y"^"t-1", "(0/1)")), y=expression(paste("Leaf area in year y"^"t", " (cm"^"2",")"))) +
+  geom_smooth(method=lm, se=FALSE, fullrange=FALSE, level=0.95) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), position = position_dodge(0.1)) +
+  theme_classic() +
+  geom_point(data=growth2, inherit.aes = TRUE, aes(x=as.character(herb.pre), y=la.res), shape=21, col="grey48")
+
+###plot predictions for the zero-inflated model
+q4glm1.pre.zi = ggpredict(q4glm1, terms = "herb.pre", type = "zi_prob")
+
+q4b = ggplot(q4glm1.pre.zi, aes(x=as.character(x), y=predicted)) +
+  geom_point(size=2, shape=20, col="black") +
+  labs(x = expression(paste("Herbivory in y"^"t-1", "(0/1)")), y=expression(paste("Probability of vegetative dormancy in y"^"t"))) +
+  geom_smooth(method=lm, se=FALSE, fullrange=FALSE, level=0.95) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), position = position_dodge(0.1)) +
+  ylim(0, 1) +
+  theme_classic()
+
+###export the plot
+pdf(file = "results/q4glm1.pdf", width = 7.5, height = 3.5)
+ggarrange(q4a, q4b, ncol = 2, nrow = 1)
+dev.off()
+
+
+########read the file that shows the climatic variability and flowering census and fitness data from about 7-9 year-----------------------
+
+demo = read_excel("data/pico_growth_met.xlsx", sheet = 3, na = "?")
+
+#############Add a linear regression model to show this effect
+lm1 = lm(popsize ~ moisture, data = demo)
+summary(lm1)
+anova(lm1)
+
+lm2 = lm(mean_la ~ moisture, data = demo)
+summary(lm2)
+anova(lm2)
+
+lm3 = lm(mean_infl ~ moisture, data = demo)
+summary(lm3)
+anova(lm3)
