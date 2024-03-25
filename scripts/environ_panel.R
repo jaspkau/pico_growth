@@ -12,7 +12,6 @@ library(lmtest)
 library(ggpubr)
 library(forcats)
 
-data = read.delim("data/env.csv", sep = ",")
 data = read_excel("data/env.xlsx", sheet = 1)
 data$date <- as.POSIXct(data$date, format= "%Y-%m-%d %H:%M",
                         tz = "GMT")
